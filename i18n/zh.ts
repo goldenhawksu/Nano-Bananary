@@ -1,6 +1,6 @@
 export default {
   app: {
-    title: "🍌 香蕉超市｜ZHO",
+    title: "🍌 香蕉超市｜CTS",
     history: "历史记录",
     back: "返回",
     chooseAnotherEffect: "选择其他效果",
