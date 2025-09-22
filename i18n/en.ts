@@ -1,6 +1,6 @@
 export default {
   app: {
-    title: "🍌 Nano Bananary｜ZHO",
+    title: "🍌 Nano Bananary｜CTS",
     history: "History",
     back: "Back",
     chooseAnotherEffect: "Choose Another Effect",
