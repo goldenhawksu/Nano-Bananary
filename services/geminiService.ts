@@ -1,91 +1,88 @@
 
 import { GoogleGenAI, Modality } from "@google/genai";
 import type { GeneratedContent } from '../types';
-
-if (!process.env.API_KEY) {
-  throw new Error("API_KEY environment variable is not set.");
-}
-
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+import { apiKeyManager } from './apiKeyManager';
 
 export async function editImage(
-    base64ImageData: string, 
-    mimeType: string, 
+    base64ImageData: string,
+    mimeType: string,
     prompt: string,
     maskBase64: string | null,
     secondaryImage: { base64: string; mimeType: string } | null
 ): Promise<GeneratedContent> {
   try {
-    let fullPrompt = prompt;
-    const parts: any[] = [
-      {
-        inlineData: {
-          data: base64ImageData,
-          mimeType: mimeType,
+    return await apiKeyManager.executeWithRetry(async (ai: GoogleGenAI) => {
+      let fullPrompt = prompt;
+      const parts: any[] = [
+        {
+          inlineData: {
+            data: base64ImageData,
+            mimeType: mimeType,
+          },
         },
-      },
-    ];
+      ];
 
-    if (maskBase64) {
-      parts.push({
-        inlineData: {
-          data: maskBase64,
-          mimeType: 'image/png',
+      if (maskBase64) {
+        parts.push({
+          inlineData: {
+            data: maskBase64,
+            mimeType: 'image/png',
+          },
+        });
+        fullPrompt = `Apply the following instruction only to the masked area of the image: "${prompt}". Preserve the unmasked area.`;
+      }
+
+      if (secondaryImage) {
+          parts.push({
+              inlineData: {
+                  data: secondaryImage.base64,
+                  mimeType: secondaryImage.mimeType,
+              },
+          });
+      }
+
+      parts.push({ text: fullPrompt });
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash-image-preview',
+        contents: { parts },
+        config: {
+          responseModalities: [Modality.IMAGE, Modality.TEXT],
         },
       });
-      fullPrompt = `Apply the following instruction only to the masked area of the image: "${prompt}". Preserve the unmasked area.`;
-    }
-    
-    if (secondaryImage) {
-        parts.push({
-            inlineData: {
-                data: secondaryImage.base64,
-                mimeType: secondaryImage.mimeType,
-            },
-        });
-    }
 
-    parts.push({ text: fullPrompt });
+      const result: GeneratedContent = { imageUrl: null, text: null };
+      const responseParts = response.candidates?.[0]?.content?.parts;
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash-image-preview',
-      contents: { parts },
-      config: {
-        responseModalities: [Modality.IMAGE, Modality.TEXT],
-      },
-    });
-
-    const result: GeneratedContent = { imageUrl: null, text: null };
-    const responseParts = response.candidates?.[0]?.content?.parts;
-
-    if (responseParts) {
-      for (const part of responseParts) {
-        if (part.text) {
-          result.text = (result.text ? result.text + "\n" : "") + part.text;
-        } else if (part.inlineData) {
-          result.imageUrl = `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
+      if (responseParts) {
+        for (const part of responseParts) {
+          if (part.text) {
+            result.text = (result.text ? result.text + "\n" : "") + part.text;
+          } else if (part.inlineData) {
+            result.imageUrl = `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
+          }
         }
       }
-    }
 
-    if (!result.imageUrl) {
-        let errorMessage;
-        if (result.text) {
-            errorMessage = `The model responded: "${result.text}"`;
-        } else {
-            const finishReason = response.candidates?.[0]?.finishReason;
-            const safetyRatings = response.candidates?.[0]?.safetyRatings;
-            errorMessage = "The model did not return an image. It might have refused the request. Please try a different image or prompt.";
-            
-            if (finishReason === 'SAFETY') {
-                const blockedCategories = safetyRatings?.filter(r => r.blocked).map(r => r.category).join(', ');
-                errorMessage = `The request was blocked for safety reasons. Categories: ${blockedCategories || 'Unknown'}. Please modify your prompt or image.`;
-            }
-        }
-        throw new Error(errorMessage);
-    }
+      if (!result.imageUrl) {
+          let errorMessage;
+          if (result.text) {
+              errorMessage = `The model responded: "${result.text}"`;
+          } else {
+              const finishReason = response.candidates?.[0]?.finishReason;
+              const safetyRatings = response.candidates?.[0]?.safetyRatings;
+              errorMessage = "The model did not return an image. It might have refused the request. Please try a different image or prompt.";
 
-    return result;
+              if (finishReason === 'SAFETY') {
+                  const blockedCategories = safetyRatings?.filter(r => r.blocked).map(r => r.category).join(', ');
+                  errorMessage = `The request was blocked for safety reasons. Categories: ${blockedCategories || 'Unknown'}. Please modify your prompt or image.`;
+              }
+          }
+          throw new Error(errorMessage);
+      }
+
+      return result;
+    });
 
   } catch (error) {
     console.error("Error calling Gemini API:", error);
@@ -116,47 +113,52 @@ export async function generateVideo(
     onProgress: (message: string) => void
 ): Promise<string> {
     try {
-        onProgress("Initializing video generation...");
+        const { result, apiKey } = await apiKeyManager.executeWithRetryAndKey(async (ai: GoogleGenAI) => {
+            onProgress("Initializing video generation...");
 
-        // FIX: The `request` object was explicitly typed as `any`, which caused a loss of type
-        // information for the `operation` variable returned by `generateVideos`. This could lead
-        // to a TypeScript error. By allowing TypeScript to infer the type, we ensure
-        // `operation` is correctly typed, resolving the error.
-        const request = {
-            model: 'veo-2.0-generate-001',
-            prompt: prompt,
-            config: {
-                numberOfVideos: 1,
-                aspectRatio: aspectRatio
-            },
-            ...(image && {
-                image: {
-                    imageBytes: image.base64,
-                    mimeType: image.mimeType
-                }
-            })
-        };
+            // FIX: The `request` object was explicitly typed as `any`, which caused a loss of type
+            // information for the `operation` variable returned by `generateVideos`. This could lead
+            // to a TypeScript error. By allowing TypeScript to infer the type, we ensure
+            // `operation` is correctly typed, resolving the error.
+            const request = {
+                model: 'veo-2.0-generate-001',
+                prompt: prompt,
+                config: {
+                    numberOfVideos: 1,
+                    aspectRatio: aspectRatio
+                },
+                ...(image && {
+                    image: {
+                        imageBytes: image.base64,
+                        mimeType: image.mimeType
+                    }
+                })
+            };
 
-        let operation = await ai.models.generateVideos(request);
-        
-        onProgress("Polling for results, this may take a few minutes...");
+            let operation = await ai.models.generateVideos(request);
 
-        while (!operation.done) {
-            await new Promise(resolve => setTimeout(resolve, 10000));
-            operation = await ai.operations.getVideosOperation({ operation: operation });
-        }
+            onProgress("Polling for results, this may take a few minutes...");
 
-        if (operation.error) {
-            throw new Error(operation.error.message || "Video generation failed during operation.");
-        }
+            while (!operation.done) {
+                await new Promise(resolve => setTimeout(resolve, 10000));
+                operation = await ai.operations.getVideosOperation({ operation: operation });
+            }
 
-        const downloadLink = operation.response?.generatedVideos?.[0]?.video?.uri;
+            if (operation.error) {
+                throw new Error(operation.error.message || "Video generation failed during operation.");
+            }
 
-        if (!downloadLink) {
-            throw new Error("Video generation completed, but no download link was found.");
-        }
+            const downloadLink = operation.response?.generatedVideos?.[0]?.video?.uri;
 
-        return `${downloadLink}&key=${process.env.API_KEY}`;
+            if (!downloadLink) {
+                throw new Error("Video generation completed, but no download link was found.");
+            }
+
+            return downloadLink;
+        });
+
+        // 使用实际生成视频时使用的API key构建下载链接
+        return `${result}&key=${apiKey}`;
 
     } catch (error) {
         console.error("Error calling Video Generation API:", error);
