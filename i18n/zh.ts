@@ -31,7 +31,7 @@ export default {
   },
   transformationSelector: {
     title: "开始“蕉”虑吧！",
-    description: "准备好重塑你的现实了吗？选择一个类别开始施展魔法。你也可以拖放来重新排序你最喜欢的类别。",
+    description: "准备好重塑你的现实了吗？选择一个类别开始施展魔法。你也可以拖放来重新排序你最喜欢的类别。这里有一些快速参考：https://chatimg.ai/zh/gallery",
     descriptionWithResult: "真有趣！你上一个创作已经准备好进行下一轮了。选择一个新的效果来继续这个创作链吧。"
   },
   imageEditor: {
