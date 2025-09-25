@@ -31,7 +31,7 @@ export default {
   },
   transformationSelector: {
     title: "Let's Go Bananas!",
-    description: "Ready to remix your reality? Pick a category to start the magic. You can also drag and drop to reorder your favorite categories.",
+    description: "Ready to remix your reality? Pick a category to start the magic. You can also drag and drop to reorder your favorite categories. Here are some more quick references: https://chatimg.ai/gallery",
     descriptionWithResult: "That was fun! Your last creation is ready for another round. Select a new effect to keep the chain going."
   },
   imageEditor: {
